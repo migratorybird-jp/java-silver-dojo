@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Java Silver 道場 v2</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #080d1a; min-height: 100vh; }
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-thumb { background: rgba(99,179,237,0.3); border-radius: 3px; }
+textarea { outline: none; }
+button { cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ============================================================
+// 試験データ: Silver SE11 全11章 + 本番80問模擬試験
+// ============================================================
+
+const CHAPTERS = [
+  { id:"ch01", label:"簡単なJavaプログラムの作成", icon:"🖥️", weight:5 },
+  { id:"ch02", label:"基本データ型と文字列操作",   icon:"📝", weight:8 },
+  { id:"ch03", label:"演算子と判定構造",           icon:"🔢", weight:8 },
+  { id:"ch04", label:"制御構造",                   icon:"🔀", weight:7 },
+  { id:"ch05", label:"配列の操作",                 icon:"📊", weight:7 },
+  { id:"ch06", label:"インスタンスとメソッド",     icon:"🏗️", weight:8 },
+  { id:"ch07", label:"継承・インタフェース・抽象クラス", icon:"🧬", weight:10 },
+  { id:"ch08", label:"関数型インタフェース・ラムダ式", icon:"λ",  weight:8 },
+  { id:"ch09", label:"API（String/ArrayList等）", icon:"📚", weight:8 },
+  { id:"ch10", label:"例外処理",                   icon:"⚠️", weight:9 },
+  { id:"ch11", label:"モジュールシステム",         icon:"📦", weight:5 },
+];
+
+// 各章の問題バンク（Silver本番レベルのトリッキー問題を重視）
+const QUESTION_BANK = {
+
+ch01: [
+  {
+    q:`次のmainメソッドの宣言で、コンパイルは通るが実行時エラーになるものはどれですか？`,
+    opts:["public static void main(String[] args){}",
+          "public static void main(String args[]){}",
+          "static public void main(String[] args){}",
+          "public void main(String[] args){}"],
+    ans:[3], multi:false,
+    exp:"public void mainはstaticがないためJVMから直接呼び出せず、実行時エラー（NoSuchMethodError）になります。コンパイル自体は通ります。A,B,Cはすべて有効なmainメソッドの宣言です。"
+  },
+  {
+    q:`次のコードのうち、コンパイルエラーになるものはどれですか？\n\nA. public class Foo {}\nB. public class foo {}\nC. public class 1Foo {}\nD. public class Foo1 {}`,
+    opts:["A","B","C","D"],
+    ans:[2], multi:false,
+    exp:"Javaの識別子は数字で始められません。'1Foo'はコンパイルエラーです。クラス名は大文字始まりが慣習ですが、'foo'のような小文字始まりもコンパイルは通ります。"
+  },
+  {
+    q:`次のコードを実行したとき、出力される結果はどれですか？\n\npublic class Hello {\n    public static void main(String[] args) {\n        System.out.print("Hello");\n        System.out.print(" ");\n        System.out.println("World");\n        System.out.println();\n        System.out.print("!");\n    }\n}`,
+    opts:["Hello World\n\n!",
+          "Hello World\n!",
+          "Hello World!\n",
+          "Hello World\n\n!\n"],
+    ans:[0], multi:false,
+    exp:"print()は改行なし、println()は改行あり。'Hello World'→改行、空行（println()）、'!'は改行なしで最後。"
+  },
+  {
+    q:`Javaのソースファイル名とクラス名の関係について正しいものはどれですか？`,
+    opts:["ファイル名はクラス名と一致させなくてよい",
+          "publicクラスがある場合、ファイル名はそのpublicクラス名と一致させる必要がある",
+          "1ファイルにpublicクラスを複数定義できる",
+          "ファイル名はすべて小文字にする必要がある"],
+    ans:[1], multi:false,
+    exp:"publicクラスがある場合、ファイル名はpublicクラスの名前（大文字小文字含め完全一致）にする必要があります。1ファイルに複数のpublicクラスを定義するとコンパイルエラーです。"
+  },
+  {
+    q:`次のコードはコンパイルできますか？\n\nclass A {\n    static int x = 10;\n}\nclass B extends A {\n    static int x = 20;\n}\npublic class Test {\n    public static void main(String[] args) {\n        A obj = new B();\n        System.out.println(obj.x);\n    }\n}`,
+    opts:["コンパイルエラー",
+          "10が出力される",
+          "20が出力される",
+          "実行時例外が発生する"],
+    ans:[1], multi:false,
+    exp:"staticフィールドはオーバーライドではなく「隠蔽」されます。参照型（A型）のxが使われるため10が出力されます。インスタンスメソッドのポリモーフィズムとは異なります。"
+  },
+],
+
+ch02: [
+  {
+    q:`次のコードを実行した結果はどれですか？\n\nint i = 5;\ndouble d = 10.0;\nSystem.out.println(i / 2);\nSystem.out.println(d / 2);`,
+    opts:["2\n5.0","2.5\n5.0","2\n5","2.5\n5"],
+    ans:[0], multi:false,
+    exp:"int/intは整数除算なので2（小数切り捨て）。double/intはdoubleとなり5.0が出力されます。"
+  },
+  {
+    q:`次のコードの出力はどれですか？\n\nString s1 = \"hello\";\nString s2 = \"hello\";\nString s3 = new String(\"hello\");\nSystem.out.println(s1 == s2);\nSystem.out.println(s1 == s3);\nSystem.out.println(s1.equals(s3));`,
+    opts:["true\ntrue\ntrue",
+          "true\nfalse\ntrue",
+          "false\nfalse\ntrue",
+          "false\nfalse\nfalse"],
+    ans:[1], multi:false,
+    exp:"文字列リテラルはString定数プールで共有されるためs1==s2はtrue。new String()は別オブジェクトなのでs1==s3はfalse。equals()は値比較なのでtrue。"
+  },
+  {
+    q:`次のコードはコンパイルエラーになりますか？\n\nbyte b1 = 100;\nbyte b2 = 100;\nbyte b3 = b1 + b2;`,
+    opts:["コンパイルエラーになる（b1+b2はintに昇格するため）",
+          "コンパイルエラーにならず200が出力される",
+          "コンパイルエラーにならず-56が出力される",
+          "実行時にオーバーフロー例外が発生する"],
+    ans:[0], multi:false,
+    exp:"byteの算術演算はintに自動昇格（widening）します。b1+b2の結果はint型のため、byte変数b3に明示的キャストなしで代入するとコンパイルエラーです。"
+  },
+  {
+    q:`次のStringメソッドの出力として正しいものはどれですか？\n\nString s = \"Hello World\";\nSystem.out.println(s.substring(6));\nSystem.out.println(s.substring(0,5));\nSystem.out.println(s.indexOf(\"o\"));`,
+    opts:["World\nHello\n4",
+          "World\nHello\n7",
+          " World\nHello\n4",
+          "World\nHello \n4"],
+    ans:[0], multi:false,
+    exp:"substring(6)は6番目から末尾。substring(0,5)は0〜4（5は含まない）。indexOf('o')は最初のoのインデックスで4。"
+  },
+  {
+    q:`char型について正しいものをすべて選んでください。`,
+    opts:["charはunsigned（符号なし）の16bit整数である",
+          "charに整数を代入できる",
+          "char c = 'A' + 1; はコンパイルエラーになる",
+          "char c = 65; はコンパイルエラーになる"],
+    ans:[0,1], multi:true,
+    exp:"charは0〜65535のunsigned 16bitです。整数リテラルや算術演算結果をcharに代入できます（'A'+1=66='B'）。ただしint変数は代入不可（キャスト必要）。"
+  },
+  {
+    q:`次のコードの実行結果はどれですか？\n\nString s = \"Java\";\ns.concat(\" Silver\");\nSystem.out.println(s);`,
+    opts:["Java Silver","Java","コンパイルエラー","Silver"],
+    ans:[1], multi:false,
+    exp:"StringはImmutable（不変）です。concat()は新しいStringを返しますが、sへの再代入がないのでsは変化しません。\"Java\"が出力されます。"
+  },
+  {
+    q:`次のvar宣言で、コンパイルエラーになるものはどれですか？`,
+    opts:["var x = 10;",
+          "var list = new ArrayList<>();",
+          "var x;",
+          "var s = \"hello\";"],
+    ans:[2], multi:false,
+    exp:"varはローカル変数型推論です。型を推論するために初期化式が必要です。'var x;'のように初期化なしでは型が推論できずコンパイルエラーになります。"
+  },
+],
+
+ch03: [
+  {
+    q:`次のコードの出力はどれですか？\n\nint x = 5;\nSystem.out.println(x++);\nSystem.out.println(++x);\nSystem.out.println(x);`,
+    opts:["5\n7\n7","5\n6\n7","6\n7\n7","5\n7\n8"],
+    ans:[0], multi:false,
+    exp:"x++(後置)はx=5を出力後にインクリメント→x=6。++x(前置)はインクリメント後に出力→x=7を出力。最後のxも7。"
+  },
+  {
+    q:`次のswitch文の出力はどれですか？\n\nint i = 2;\nswitch(i) {\n    case 1:\n        System.out.println(\"one\");\n    case 2:\n        System.out.println(\"two\");\n    case 3:\n        System.out.println(\"three\");\n    default:\n        System.out.println(\"other\");\n}`,
+    opts:["two","two\nthree","two\nthree\nother","one\ntwo\nthree\nother"],
+    ans:[2], multi:false,
+    exp:"switch文はbreakがないとfall-through（次のcaseも実行）します。case 2にマッチしてtwo→case 3でthree→defaultでotherと出力されます。"
+  },
+  {
+    q:`次のコードのコンパイル結果はどれですか？\n\nfinal int x = 5;\nif(x == 5) {\n    System.out.println(\"five\");\n} else {\n    System.out.println(\"not five\");\n}`,
+    opts:["コンパイルエラー",
+          "fiveが出力される",
+          "not fiveが出力される",
+          "コンパイルは通るが警告が出る"],
+    ans:[1], multi:false,
+    exp:"fiveが出力されます。final変数は定数として扱われ、コンパイラはx==5が常にtrueと判断できますが、コンパイルエラーにはなりません。else節はdead codeとして最適化されます。"
+  },
+  {
+    q:`次の三項演算子の結果はどれですか？\n\nint a = 5, b = 3;\nString result = (a > b) ? ((a > 10) ? \"大\" : \"中\") : \"小\";\nSystem.out.println(result);`,
+    opts:["大","中","小","コンパイルエラー"],
+    ans:[1], multi:false,
+    exp:"a>b(5>3)はtrueなので左側を評価。a>10(5>10)はfalseなので\"中\"が選ばれます。三項演算子はネスト可能です。"
+  },
+  {
+    q:`次のうち、Javaでswitch式（Java14〜）に使えるデータ型はどれですか？正しいものをすべて選んでください。`,
+    opts:["int","String","double","boolean","char"],
+    ans:[0,1,4], multi:true,
+    exp:"switch式（文）に使えるのはbyte/short/int/char（とラッパー型）およびString/enumです。doubleとbooleanは使えません。"
+  },
+],
+
+ch04: [
+  {
+    q:`次のコードの出力はどれですか？\n\nfor(int i=0; i<3; i++) {\n    for(int j=0; j<3; j++) {\n        if(j==1) break;\n        System.out.print(i+\"\"+j+\" \");\n    }\n}`,
+    opts:["00 01 02 10 11 12 20 21 22",
+          "00 10 20",
+          "00 10 20 ",
+          "01 11 21"],
+    ans:[2], multi:false,
+    exp:"j==1でbreakすると内側ループのみ抜けます。j=0のときだけ出力：00, 10, 20（末尾スペースあり）。"
+  },
+  {
+    q:`ラベル付きbreakの動作として正しいものはどれですか？\n\nouter:\nfor(int i=0; i<3; i++) {\n    for(int j=0; j<3; j++) {\n        if(i==1 && j==1) break outer;\n        System.out.print(i+\"\"+j+\" \");\n    }\n}`,
+    opts:["00 01 02 10",
+          "00 01 02 10 ",
+          "00 01 02 ",
+          "コンパイルエラー"],
+    ans:[1], multi:false,
+    exp:"i=1,j=1のときouter（外側ループ）をbreakします。それまでに出力されるのは00 01 02 10（末尾スペースあり）です。"
+  },
+  {
+    q:`次のwhile文で、無限ループになるものはどれですか？`,
+    opts:["int i=0; while(i<10) { i++; }",
+          "int i=0; while(i!=10) { i+=3; }",
+          "int i=10; while(i>0) { i--; }",
+          "while(true) { break; }"],
+    ans:[1], multi:false,
+    exp:"i+=3でi=0,3,6,9,12...となりi==10には決してならない。無限ループです。i=0から3ずつ増えると10を飛び越してしまいます。"
+  },
+  {
+    q:`次のdo-whileの出力はどれですか？\n\nint i = 10;\ndo {\n    System.out.println(i);\n    i++;\n} while(i < 10);`,
+    opts:["何も出力されない","10","10\n11","無限ループ"],
+    ans:[1], multi:false,
+    exp:"do-whileは条件チェック前に必ず1回実行します。i=10が出力された後、i=11になりwhile(11<10)はfalseなのでループ終了。10だけ出力されます。"
+  },
+],
+
+ch05: [
+  {
+    q:`次のコードの出力はどれですか？\n\nint[] arr = new int[3];\nSystem.out.println(arr[0]);\nSystem.out.println(arr.length);`,
+    opts:["null\n3","0\n3","0\n2","コンパイルエラー"],
+    ans:[1], multi:false,
+    exp:"int配列はデフォルト値0で初期化されます。arr[0]は0。arr.lengthは要素数で3（フィールドなのに()不要）。"
+  },
+  {
+    q:`次のコードの結果はどれですか？\n\nint[][] matrix = {{1,2},{3,4},{5,6}};\nSystem.out.println(matrix.length);\nSystem.out.println(matrix[1].length);`,
+    opts:["2\n3","3\n2","6\n2","3\n3"],
+    ans:[1], multi:false,
+    exp:"matrix.lengthは外側の次元（行数）=3。matrix[1].lengthはmatrix[1]={3,4}の要素数=2。"
+  },
+  {
+    q:`次のコードはコンパイルエラーになりますか？\n\nString[] arr = {\"a\",\"b\",\"c\"};\nfor(String s : arr) {\n    s = s.toUpperCase();\n}\nSystem.out.println(arr[0]);`,
+    opts:["コンパイルエラー",
+          "A",
+          "a",
+          "実行時例外"],
+    ans:[2], multi:false,
+    exp:"for-each文のs=s.toUpperCase()はローカル変数sを更新しているだけです。元の配列arr[0]は変更されないため\"a\"が出力されます。"
+  },
+  {
+    q:`配列のコピーについて正しいものをすべて選んでください。`,
+    opts:["arr2 = arr1; でディープコピーされる",
+          "arr2 = arr1; は参照のコピーである",
+          "Arrays.copyOf()で新しい配列を作成できる",
+          "System.arraycopy()でコピーできる"],
+    ans:[1,2,3], multi:true,
+    exp:"arr2=arr1は参照コピー（シャロウコピー）で、同じ配列を指します。ディープコピーにはArrays.copyOf()やSystem.arraycopy()を使います。"
+  },
+  {
+    q:`次のコードの出力はどれですか？\n\nimport java.util.Arrays;\nint[] a = {5,3,1,4,2};\nArrays.sort(a);\nSystem.out.println(Arrays.toString(a));\nSystem.out.println(Arrays.binarySearch(a, 3));`,
+    opts:["[1, 2, 3, 4, 5]\n1",
+          "[1, 2, 3, 4, 5]\n2",
+          "[5, 3, 1, 4, 2]\n2",
+          "[1, 2, 3, 4, 5]\n3"],
+    ans:[1], multi:false,
+    exp:"sort後[1,2,3,4,5]。binarySearchは値3のインデックスを返し、ソート後のインデックス2が返ります（0始まり）。"
+  },
+],
+
+ch06: [
+  {
+    q:`次のコードの出力はどれですか？\n\nclass Counter {\n    int count = 0;\n    void increment() { count++; }\n    static int instances = 0;\n    Counter() { instances++; }\n}\nnew Counter(); new Counter(); new Counter();\nSystem.out.println(Counter.instances);`,
+    opts:["0","1","2","3"],
+    ans:[3], multi:false,
+    exp:"staticフィールドはクラスに紐付き、全インスタンスで共有されます。3回インスタンス化されるのでinstances=3。"
+  },
+  {
+    q:`メソッドのオーバーロードについて正しいものをすべて選んでください。`,
+    opts:["引数の型が異なればオーバーロードできる",
+          "戻り値の型だけが異なるオーバーロードはコンパイルエラー",
+          "引数の数が異なればオーバーロードできる",
+          "アクセス修飾子が異なればオーバーロードできる"],
+    ans:[0,1,2], multi:true,
+    exp:"オーバーロードは引数リスト（型・数・順序）が異なる必要があります。戻り値の型だけ異なるのはコンパイルエラー。アクセス修飾子の違いだけではオーバーロードにならない（コンパイルエラー）。"
+  },
+  {
+    q:`次のコードの出力はどれですか？\n\nclass Animal {\n    String name = \"Animal\";\n    String getName() { return name; }\n}\nclass Dog extends Animal {\n    String name = \"Dog\";\n    String getName() { return name; }\n}\nAnimal a = new Dog();\nSystem.out.println(a.name);\nSystem.out.println(a.getName());`,
+    opts:["Animal\nAnimal","Animal\nDog","Dog\nDog","Dog\nAnimal"],
+    ans:[1], multi:false,
+    exp:"フィールドは参照型で解決（Animal）。メソッドは実際のクラス（Dog）でオーバーライドされ多態的に動作→Dog。これがポリモーフィズムとフィールド隠蔽の違いです。"
+  },
+  {
+    q:`次のコードはコンパイルできますか？\n\nclass Foo {\n    private Foo() {}\n    static Foo create() {\n        return new Foo();\n    }\n}`,
+    opts:["コンパイルエラー（コンストラクタがprivateのためインスタンス化できない）",
+          "コンパイルエラー（staticメソッド内でnewは使えない）",
+          "コンパイルは通る",
+          "コンパイルは通るが実行時エラー"],
+    ans:[2], multi:false,
+    exp:"privateコンストラクタでも同クラス内からはアクセスできます。これはFactory Methodパターンの基本です。コンパイルは正常に通ります。"
+  },
+  {
+    q:`次のコードで、変数のスコープに関して正しい説明はどれですか？\n\nvoid method() {\n    int x = 1;\n    {\n        int y = 2;\n        System.out.println(x + y);\n    }\n    System.out.println(x);\n    // System.out.println(y); ← ここ\n}`,
+    opts:["yはmethod全体でアクセスできる",
+          "コメントアウトされた行はコンパイルエラーになる",
+          "xはブロック内でアクセスできない",
+          "yとxは同じスコープを持つ"],
+    ans:[1], multi:false,
+    exp:"yの有効スコープは宣言されたブロック内のみです。ブロック外からyにアクセスしようとするとコンパイルエラーになります。"
+  },
+],
+
+ch07: [
+  {
+    q:`抽象クラスとインターフェースについて正しいものをすべて選んでください。`,
+    opts:["抽象クラスはインスタンス化できない",
+          "インターフェースはインスタンス化できない",
+          "抽象クラスは複数継承できる",
+          "クラスは複数のインターフェースをimplementsできる"],
+    ans:[0,1,3], multi:true,
+    exp:"抽象クラスもインターフェースもインスタンス化不可。Javaのクラスは単一継承（extendsは1つ）。インターフェースはimplements A,B,Cのように複数実装可能。"
+  },
+  {
+    q:`次のコードの出力はどれですか？\n\nclass Parent {\n    Parent() {\n        System.out.println(\"Parent\");\n    }\n}\nclass Child extends Parent {\n    Child() {\n        System.out.println(\"Child\");\n    }\n}\nnew Child();`,
+    opts:["Child","Parent\nChild","Child\nParent","コンパイルエラー"],
+    ans:[1], multi:false,
+    exp:"サブクラスのコンストラクタ先頭に暗黙的にsuper()が挿入されます。まず親のコンストラクタが実行され「Parent」→次に「Child」と出力されます。"
+  },
+  {
+    q:`次のコードはコンパイルできますか？\n\nabstract class Shape {\n    abstract double area();\n    void print() {\n        System.out.println(\"面積:\" + area());\n    }\n}\nclass Circle extends Shape {\n    double r;\n    Circle(double r) { this.r = r; }\n    // area()をオーバーライドしていない\n}`,
+    opts:["コンパイルエラー（abstractメソッドが実装されていない）",
+          "コンパイルは通る",
+          "実行時エラー",
+          "コンパイルは通るがCircleもabstractになる"],
+    ans:[0], multi:false,
+    exp:"抽象クラスを継承した具象クラスは全ての抽象メソッドをオーバーライドする必要があります。area()が実装されていないのでコンパイルエラーです。Circleもabstractにすれば通ります。"
+  },
+  {
+    q:`インターフェースのdefaultメソッドについて正しいものはどれですか？`,
+    opts:["defaultメソッドはabstractメソッドの一種である",
+          "実装クラスでdefaultメソッドをオーバーライドできる",
+          "defaultメソッドはstaticにできる",
+          "defaultメソッドのアクセス修飾子はprivateのみ"],
+    ans:[1], multi:false,
+    exp:"defaultメソッドは実装を持ち、実装クラスでオーバーライドできます（必須ではない）。abstractではありません。staticとは共存不可（Java8時点）。アクセス修飾子はpublic（暗黙的）。"
+  },
+  {
+    q:`次のコードの出力はどれですか？\n\ninterface Flyable {\n    default String move() { return \"fly\"; }\n}\ninterface Swimable {\n    default String move() { return \"swim\"; }\n}\nclass Duck implements Flyable, Swimable {\n    public String move() { return Flyable.super.move() + \"+\" + Swimable.super.move(); }\n}\nSystem.out.println(new Duck().move());`,
+    opts:["fly","swim","fly+swim","コンパイルエラー"],
+    ans:[2], multi:false,
+    exp:"2つのインターフェースが同名defaultメソッドを持つ場合、実装クラスでオーバーライドが必須。インターフェース名.super.method()で特定のdefaultメソッドを呼べます。"
+  },
+  {
+    q:`オーバーライドのルールとして正しいものをすべて選んでください。`,
+    opts:["アクセス修飾子は親より広くできる",
+          "アクセス修飾子は親より狭くできる",
+          "戻り値型は親のサブクラス型（共変戻り値型）にできる",
+          "throwsのチェック例外は親より多い型を追加できる"],
+    ans:[0,2], multi:true,
+    exp:"オーバーライドでは(1)アクセス修飾子は同じか広く(2)戻り値は共変（サブクラス）OK(3)throwsのチェック例外は同じか狭くのみ。広くするとコンパイルエラー。"
+  },
+],
+
+ch08: [
+  {
+    q:`次のラムダ式で、コンパイルエラーになるものはどれですか？\n\nPredicate<String> p = (String s) -> s.isEmpty();\nPredicate<String> q = s -> s.isEmpty();\nPredicate<String> r = s -> { return s.isEmpty(); };\nPredicate<String> t = s -> { s.isEmpty(); };`,
+    opts:["p","q","r","t"],
+    ans:[3], multi:false,
+    exp:"tはブロックラムダでreturnなしです。Predicateはbooleanを返す必要があるため、returnなしのブロックはコンパイルエラー。p,q,rはすべて有効な書き方です。"
+  },
+  {
+    q:`次のコードの出力はどれですか？\n\nList<Integer> nums = Arrays.asList(1,2,3,4,5);\nint sum = nums.stream()\n    .filter(n -> n % 2 == 0)\n    .mapToInt(Integer::intValue)\n    .sum();\nSystem.out.println(sum);`,
+    opts:["6","15","9","2"],
+    ans:[0], multi:false,
+    exp:"偶数のみフィルタ：2,4。2+4=6。mapToInt(Integer::intValue)はメソッド参照でAutoUnboxing的な変換。"
+  },
+  {
+    q:`Function<T,R>について正しいものはどれですか？`,
+    opts:["引数なし、戻り値あり",
+          "引数あり、戻り値なし",
+          "引数あり、戻り値あり",
+          "引数なし、戻り値なし"],
+    ans:[2], multi:false,
+    exp:"Function<T,R>はT型の引数を受け取りR型を返します。引数なし→Supplier<T>、戻り値なし→Consumer<T>、両方なし→Runnableが対応します。"
+  },
+  {
+    q:`次のStream操作でコンパイルエラーになるものはどれですか？`,
+    opts:["list.stream().filter(s->s.length()>3).collect(Collectors.toList())",
+          "list.stream().sorted().forEach(System.out::println)",
+          "list.stream().filter(s->s.length()>3).filter(s->s.startsWith(\"A\"))",
+          "list.stream().forEach(s->s.length()).collect(Collectors.toList())"],
+    ans:[3], multi:false,
+    exp:"forEach()は終端操作でvoidを返します。その後collect()を呼ぼうとするとコンパイルエラー。中間操作（filter,sorted等）は連鎖可能ですが、終端操作の後にStreamの処理は続けられません。"
+  },
+  {
+    q:`Optional<T>の使い方として正しいものをすべて選んでください。`,
+    opts:["Optional.empty()で空のOptionalを作れる",
+          "ifPresent()で値がある場合に処理を実行できる",
+          "get()はnullを返すことがある",
+          "orElse()でデフォルト値を設定できる"],
+    ans:[0,1,3], multi:true,
+    exp:"get()は値がない場合NoSuchElementExceptionをスロー（nullではない）。Optional.empty(),ifPresent(),orElse()はすべて正しい使い方です。"
+  },
+],
+
+ch09: [
+  {
+    q:`次のコードの出力はどれですか？\n\nStringBuilder sb = new StringBuilder(\"Hello\");\nsb.append(\" World\");\nsb.insert(5, \",\");\nsb.delete(0, 6);\nSystem.out.println(sb);`,
+    opts:["Hello, World","World"," World","World,"],
+    ans:[1], multi:false,
+    exp:"append後\"Hello World\"→insert(5,\",\")で\"Hello, World\"→delete(0,6)で0〜5を削除し\"World\"が残ります。"
+  },
+  {
+    q:`ArrayListとLinkedListの特性について正しいものをすべて選んでください。`,
+    opts:["ArrayListはランダムアクセス（get）がO(1)で速い",
+          "LinkedListは先頭・末尾の追加削除がO(1)で速い",
+          "ArrayListは内部的に動的配列を使う",
+          "LinkedListはランダムアクセスがO(1)で速い"],
+    ans:[0,1,2], multi:true,
+    exp:"ArrayListはインデックスによるアクセスO(1)、内部は動的配列。LinkedListは連結リストで先頭末尾操作O(1)だがランダムアクセスはO(n)。"
+  },
+  {
+    q:`次のコードの出力はどれですか？\n\nList<String> list = new ArrayList<>(Arrays.asList(\"b\",\"a\",\"c\"));\nCollections.sort(list);\nSystem.out.println(list.get(0));\nSystem.out.println(Collections.binarySearch(list, \"b\"));`,
+    opts:["a\n1","a\n0","b\n1","b\n0"],
+    ans:[0], multi:false,
+    exp:"sort後[a,b,c]。get(0)=\"a\"。binarySearch(list,\"b\")はソート済みリストから\"b\"を検索→インデックス1。"
+  },
+  {
+    q:`次のHashMapの操作で正しいものはどれですか？\n\nMap<String,Integer> map = new HashMap<>();\nmap.put(\"a\", 1);\nmap.put(\"b\", 2);\nmap.put(\"a\", 3);\nSystem.out.println(map.size());\nSystem.out.println(map.get(\"a\"));`,
+    opts:["3\n1","2\n3","3\n3","2\n1"],
+    ans:[1], multi:false,
+    exp:"HashMapは同じキーで上書きします。\"a\"→1の後\"a\"→3で上書き。キーは\"a\"と\"b\"の2つなのでsize()=2。map.get(\"a\")=3。"
+  },
+  {
+    q:`次のIteratorの使用例でコンパイルエラーまたは実行時例外が発生するものはどれですか？\n\nList<String> list = new ArrayList<>(Arrays.asList(\"a\",\"b\",\"c\"));\nfor(String s : list) {\n    if(s.equals(\"b\")) list.remove(s);\n}`,
+    opts:["コンパイルエラー",
+          "正常に動作し[a,c]になる",
+          "ConcurrentModificationExceptionが発生する",
+          "IndexOutOfBoundsExceptionが発生する"],
+    ans:[2], multi:false,
+    exp:"for-eachの反復中にリストを変更するとConcurrentModificationExceptionが発生します。削除にはIterator.remove()またはremoveIf()を使います。"
+  },
+],
+
+ch10: [
+  {
+    q:`次のコードの実行結果はどれですか？\n\ntry {\n    System.out.println(\"try\");\n    throw new RuntimeException();\n} catch(Exception e) {\n    System.out.println(\"catch\");\n    throw e;\n} finally {\n    System.out.println(\"finally\");\n}`,
+    opts:["try\ncatch\nfinally",
+          "try\nfinally",
+          "try\ncatch",
+          "try\ncatch\nfinally（その後例外が再スロー）"],
+    ans:[3], multi:false,
+    exp:"try→例外発生→catch（println+再throw）→finally（必ず実行）→例外が再スローされます。finally後に例外が呼び出し元に伝播します。"
+  },
+  {
+    q:`チェック例外と非チェック例外について正しいものをすべて選んでください。`,
+    opts:["IOExceptionはチェック例外である",
+          "NullPointerExceptionはチェック例外である",
+          "RuntimeExceptionのサブクラスは非チェック例外である",
+          "Errorはチェック例外である"],
+    ans:[0,2], multi:true,
+    exp:"チェック例外はException（RuntimeException除く）のサブクラス。RuntimeExceptionサブクラスは非チェック例外。ErrorはJVMレベルの問題で通常catchすべきでない。"
+  },
+  {
+    q:`マルチキャッチ「catch(IOException | SQLException e)」について正しいものはどれですか？`,
+    opts:["eはfinalではなく再代入できる",
+          "IOExceptionがSQLExceptionのスーパークラスでも使える",
+          "eは実質final（再代入不可）",
+          "Java6から使える機能である"],
+    ans:[2], multi:false,
+    exp:"マルチキャッチのeは実質final（effectively final）で再代入するとコンパイルエラー。一方が他方のスーパークラスの場合もコンパイルエラー。Java7から追加された機能です。"
+  },
+  {
+    q:`try-with-resourcesについて正しいものをすべて選んでください。`,
+    opts:["AutoCloseableを実装したオブジェクトを自動クローズする",
+          "close()はtryブロック後・catchより前に呼ばれる",
+          "複数のリソースを宣言できる",
+          "finallyブロックと併用できない"],
+    ans:[0,1,2], multi:true,
+    exp:"try-with-resourcesはAutoCloseableリソースを自動クローズ。close()はtry後即座（catchより前）に実行。複数宣言はセミコロン区切り。finallyと併用も可能です。"
+  },
+  {
+    q:`次のコードで、どの例外がcatchされますか？\n\ntry {\n    Object obj = null;\n    obj.toString();\n} catch(NullPointerException e) {\n    System.out.println(\"NPE\");\n} catch(RuntimeException e) {\n    System.out.println(\"Runtime\");\n} catch(Exception e) {\n    System.out.println(\"Exception\");\n}`,
+    opts:["NPE","Runtime","Exception","3つすべて"],
+    ans:[0], multi:false,
+    exp:"catchは上から評価し、最初にマッチしたものが実行されます。NullPointerExceptionは最初のcatchにマッチするので\"NPE\"が出力されます。"
+  },
+  {
+    q:`次のカスタム例外の定義で、チェック例外になるものはどれですか？`,
+    opts:["class MyEx extends Exception {}",
+          "class MyEx extends RuntimeException {}",
+          "class MyEx extends Error {}",
+          "class MyEx extends NullPointerException {}"],
+    ans:[0], multi:false,
+    exp:"Exceptionを直接継承するとチェック例外になります。RuntimeException継承は非チェック例外。Error継承はエラー（通常catchしない）。NullPointerExceptionはRuntimeExceptionのサブクラスなので非チェック例外。"
+  },
+],
+
+ch11: [
+  {
+    q:`Javaモジュールシステム（Java9〜）について正しいものはどれですか？`,
+    opts:["module-info.javaはsrcの任意の場所に置ける",
+          "requiresで依存モジュールを宣言する",
+          "exportsせずにパッケージを外部公開できる",
+          "すべての既存コードはモジュールシステムに対応している"],
+    ans:[1], multi:false,
+    exp:"module-info.javaはモジュールのルートに置きます。requiresで依存を宣言し、exportsで外部公開パッケージを宣言します。exportsなしでは外部からアクセス不可です。"
+  },
+  {
+    q:`module-info.javaの正しい構文はどれですか？`,
+    opts:["module com.example { require java.base; }",
+          "module com.example { requires java.base; }",
+          "Module com.example { requires java.base; }",
+          "module com.example { import java.base; }"],
+    ans:[1], multi:false,
+    exp:"正しい構文はmodule（小文字）{ requires モジュール名; }です。requiresにsがつく点に注意。importではなくrequiresを使います。"
+  },
+  {
+    q:`名前なしモジュール（unnamed module）について正しいものはどれですか？`,
+    opts:["module-info.javaを持つモジュールのこと",
+          "すべてのパッケージをexportしない",
+          "クラスパス上のコードは名前なしモジュールとして扱われる",
+          "他のモジュールからrequiresできる"],
+    ans:[2], multi:false,
+    exp:"module-info.javaを持たないコード（クラスパス上）は名前なしモジュールとして扱われます。名前なしモジュールはすべてのモジュールにアクセスでき、すべてのパッケージをexportします。"
+  },
+],
+
+}; // end QUESTION_BANK
+
+// 本番80問シミュレーション用に全問をフラット化
+function buildExam80() {
+  const all = [];
+  Object.entries(QUESTION_BANK).forEach(([chId, qs]) => {
+    qs.forEach((q,i) => all.push({ chId, idx: i, ...q }));
+  });
+  // shuffle
+  for(let i=all.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [all[i],all[j]]=[all[j],all[i]];
+  }
+  return all.slice(0, Math.min(80, all.length));
+}
+
+// ======= UI =======
+function App() {
+  const [page, setPage] = useState("home"); // home | chapter | exam | result
+  const [selectedCh, setSelectedCh] = useState(null);
+  const [chQIdx, setChQIdx] = useState(0);
+  const [chSel, setChSel] = useState([]);
+  const [chResults, setChResults] = useState([]);
+  const [chDone, setChDone] = useState(false);
+  const [showExp, setShowExp] = useState(false);
+
+  // exam mode
+  const [examQs, setExamQs] = useState([]);
+  const [examIdx, setExamIdx] = useState(0);
+  const [examAnswers, setExamAnswers] = useState({}); // idx -> [選択肢]
+  const [examDone, setExamDone] = useState(false);
+  const [examSel, setExamSel] = useState([]);
+  const [examTime, setExamTime] = useState(180*60);
+  const timerRef = useRef(null);
+  const [examReview, setExamReview] = useState(false);
+  const [reviewIdx, setReviewIdx] = useState(0);
+
+  // progress
+  const [progress, setProgress] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("jsvp2")||"{}"); } catch { return {}; }
+  });
+  useEffect(() => { localStorage.setItem("jsvp2", JSON.stringify(progress)); }, [progress]);
+
+  // exam timer
+  useEffect(() => {
+    if(page==="exam" && !examDone) {
+      timerRef.current = setInterval(() => {
+        setExamTime(t => {
+          if(t<=1){ clearInterval(timerRef.current); setExamDone(true); return 0; }
+          return t-1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [page, examDone]);
+
+  const startExam = () => {
+    const qs = buildExam80();
+    setExamQs(qs);
+    setExamIdx(0);
+    setExamAnswers({});
+    setExamDone(false);
+    setExamSel([]);
+    setExamTime(180*60);
+    setExamReview(false);
+    setPage("exam");
+  };
+
+  const openChapter = (chId) => {
+    setSelectedCh(chId);
+    setChQIdx(0);
+    setChSel([]);
+    setChResults([]);
+    setChDone(false);
+    setShowExp(false);
+    setPage("chapter");
+  };
+
+  const chQs = selectedCh ? (QUESTION_BANK[selectedCh]||[]) : [];
+  const curChQ = chQs[chQIdx];
+  const examQ = examQs[examIdx];
+
+  const toggleOpt = (optIdx, isMulti, selState, setSelState) => {
+    if(isMulti) {
+      setSelState(prev => prev.includes(optIdx) ? prev.filter(x=>x!==optIdx) : [...prev, optIdx]);
+    } else {
+      setSelState([optIdx]);
+    }
+  };
+
+  const submitChAnswer = () => {
+    const correct = JSON.stringify([...chSel].sort()) === JSON.stringify([...curChQ.ans].sort());
+    const newRes = [...chResults, correct];
+    setChResults(newRes);
+    setShowExp(true);
+    if(chQIdx+1 >= chQs.length) {
+      const score = Math.round(newRes.filter(Boolean).length/chQs.length*100);
+      setProgress(p => ({ ...p, [selectedCh]: Math.max(p[selectedCh]||0, score) }));
+      setTimeout(() => setChDone(true), 800);
+    }
+  };
+
+  const nextChQ = () => {
+    setChQIdx(i=>i+1);
+    setChSel([]);
+    setShowExp(false);
+  };
+
+  const submitExamAnswer = () => {
+    setExamAnswers(prev => ({...prev, [examIdx]: examSel}));
+    if(examIdx+1 >= examQs.length) {
+      clearInterval(timerRef.current);
+      setExamDone(true);
+    } else {
+      setExamIdx(i=>i+1);
+      setExamSel([]);
+    }
+  };
+
+  const examScore = () => {
+    let correct = 0;
+    examQs.forEach((q,i) => {
+      const sel = examAnswers[i]||[];
+      if(JSON.stringify([...sel].sort())===JSON.stringify([...q.ans].sort())) correct++;
+    });
+    return correct;
+  };
+
+  const fmt = (s) => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+
+  const totalProg = () => {
+    const vals = CHAPTERS.map(c => progress[c.id]||0);
+    return Math.round(vals.reduce((a,b)=>a+b,0)/CHAPTERS.length);
+  };
+
+  // ====== STYLES ======
+  const C = {
+    bg: "#080d1a",
+    panel: "rgba(10,18,38,0.92)",
+    border: "rgba(56,139,253,0.2)",
+    blue: "#3b82f6",
+    purple: "#8b5cf6",
+    green: "#10b981",
+    red: "#ef4444",
+    yellow: "#f59e0b",
+    text: "#e2e8f0",
+    muted: "#64748b",
+    sub: "#94a3b8",
+  };
+  const card = { background:C.panel, border:`1px solid ${C.border}`, borderRadius:14, padding:22, marginBottom:16 };
+  const btn = (v="primary") => {
+    const base = { padding:"10px 20px", borderRadius:8, border:"none", cursor:"pointer", fontSize:14, fontWeight:600 };
+    if(v==="primary") return {...base, background:`linear-gradient(135deg,${C.blue},${C.purple})`, color:"#fff"};
+    if(v==="secondary") return {...base, background:"rgba(255,255,255,0.06)", color:C.sub, border:"1px solid rgba(255,255,255,0.1)"};
+    if(v==="green") return {...base, background:`linear-gradient(135deg,#10b981,#059669)`, color:"#fff"};
+    if(v==="red") return {...base, background:`linear-gradient(135deg,#dc2626,#991b1b)`, color:"#fff"};
+    if(v==="yellow") return {...base, background:`linear-gradient(135deg,#d97706,#92400e)`, color:"#fff"};
+    return base;
+  };
+  const header = { background:"rgba(5,10,25,0.97)", borderBottom:`1px solid ${C.border}`, padding:"13px 22px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:100 };
+  const main = { maxWidth:860, margin:"0 auto", padding:"26px 14px" };
+  const optStyle = (state) => {
+    let bg="rgba(255,255,255,0.03)", border=`1px solid rgba(255,255,255,0.08)`, color=C.text;
+    if(state==="selected") { bg="rgba(59,130,246,0.2)"; border=`1px solid ${C.blue}`; color="#93c5fd"; }
+    if(state==="correct")  { bg="rgba(16,185,129,0.15)"; border=`1px solid ${C.green}`; color="#34d399"; }
+    if(state==="wrong")    { bg="rgba(239,68,68,0.15)"; border=`1px solid ${C.red}`; color="#fca5a5"; }
+    if(state==="missed")   { bg="rgba(245,158,11,0.12)"; border=`1px solid ${C.yellow}`; color="#fcd34d"; }
+    return { display:"block", width:"100%", textAlign:"left", padding:"12px 16px", margin:"6px 0", borderRadius:9, border, background:bg, color, cursor:"pointer", fontSize:14, lineHeight:1.5 };
+  };
+
+  const renderQ = (q, selArr, setSelArr, submitted, forceOpts=null) => {
+    const opts = forceOpts || q.opts;
+    return React.createElement('div', null,
+      q.multi && React.createElement('div', { style:{ marginBottom:12, display:"inline-block", padding:"3px 12px", borderRadius:20, background:"rgba(245,158,11,0.15)", border:"1px solid rgba(245,158,11,0.4)", color:C.yellow, fontSize:12, fontWeight:600 } }, "★ 複数選択（該当するものをすべて選んでください）"),
+      React.createElement('div', { style:{ fontSize:15, fontWeight:600, lineHeight:1.7, marginBottom:16, whiteSpace:"pre-line", color:C.text, fontFamily:"'Noto Sans JP',sans-serif" } }, q.q),
+      opts.map((opt, i) => {
+        let state = "normal";
+        if(!submitted) {
+          if(selArr.includes(i)) state = "selected";
+        } else {
+          const isAns = q.ans.includes(i);
+          const isSel = selArr.includes(i);
+          if(isAns && isSel)  state = "correct";
+          else if(!isAns && isSel) state = "wrong";
+          else if(isAns && !isSel) state = "missed";
+        }
+        return React.createElement('button', {
+          key:i,
+          onClick: () => !submitted && toggleOpt(i, q.multi, selArr, setSelArr),
+          style: optStyle(state)
+        },
+          React.createElement('span', { style:{ marginRight:10, opacity:0.5, fontFamily:"monospace" } }, ["A","B","C","D","E"][i]+"."),
+          opt
+        );
+      }),
+      submitted && React.createElement('div', { style:{ marginTop:14, padding:16, background:"rgba(56,139,253,0.07)", border:`1px solid rgba(56,139,253,0.2)`, borderRadius:10 } },
+        React.createElement('span', { style:{ color:"#60a5fa", fontWeight:700, fontSize:13 } }, "💡 解説: "),
+        React.createElement('span', { style:{ color:C.sub, fontSize:13, lineHeight:1.7 } }, q.exp)
+      )
+    );
+  };
+
+  // HOME PAGE
+  if(page==="home") return React.createElement('div', { style:{ minHeight:"100vh", background:C.bg, fontFamily:"'Noto Sans JP',sans-serif", color:C.text } },
+    // header
+    React.createElement('div', { style:header },
+      React.createElement('div', { style:{ display:"flex", alignItems:"center", gap:12 } },
+        React.createElement('div', { style:{ width:36, height:36, background:`linear-gradient(135deg,${C.blue},${C.purple})`, borderRadius:9, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:"bold", fontFamily:"monospace", fontSize:17 } }, "J"),
+        React.createElement('div', null,
+          React.createElement('div', { style:{ fontWeight:700, fontSize:17, background:`linear-gradient(90deg,#60a5fa,#a78bfa)`, WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" } }, "Java Silver 道場 v2"),
+          React.createElement('div', { style:{ fontSize:11, color:C.muted } }, "1Z0-815 | 80問・180分・63%合格")
+        )
+      ),
+      React.createElement('div', { style:{ display:"flex", alignItems:"center", gap:10 } },
+        React.createElement('span', { style:{ fontSize:12, color:C.muted } }, "総合進捗"),
+        React.createElement('div', { style:{ width:110, height:5, background:"rgba(255,255,255,0.08)", borderRadius:3, overflow:"hidden" } },
+          React.createElement('div', { style:{ height:"100%", width:`${totalProg()}%`, background:`linear-gradient(90deg,${C.blue},${C.purple})`, transition:"width 0.5s" } })
+        ),
+        React.createElement('span', { style:{ fontSize:13, color:"#60a5fa", fontWeight:600 } }, `${totalProg()}%`)
+      )
+    ),
+
+    React.createElement('div', { style:main },
+      // 試験情報バナー
+      React.createElement('div', { style:{ ...card, background:"rgba(59,130,246,0.07)", border:`1px solid rgba(59,130,246,0.25)`, marginBottom:24 } },
+        React.createElement('div', { style:{ display:"flex", flexWrap:"wrap", gap:20, justifyContent:"center" } },
+          [["📋","試験番号","1Z0-815-JPN"],["❓","出題数","80問"],["⏱️","制限時間","180分"],["✅","合格ライン","63% (約50問正解)"],["💰","受験料","32,340円"]].map(([icon,label,val],i) =>
+            React.createElement('div', { key:i, style:{ textAlign:"center" } },
+              React.createElement('div', { style:{ fontSize:20 } }, icon),
+              React.createElement('div', { style:{ fontSize:11, color:C.muted, marginTop:2 } }, label),
+              React.createElement('div', { style:{ fontWeight:700, color:"#60a5fa", fontSize:14 } }, val)
+            )
+          )
+        )
+      ),
+
+      // 本番模擬ボタン
+      React.createElement('div', { style:{ textAlign:"center", marginBottom:28 } },
+        React.createElement('button', { onClick:startExam, style:{ ...btn("green"), fontSize:17, padding:"14px 40px", borderRadius:12, letterSpacing:0.5 } }, "🎯 本番模擬試験（80問）を開始する"),
+        React.createElement('div', { style:{ marginTop:8, color:C.muted, fontSize:13 } }, "制限時間180分・タイマー付き・採点&解説あり")
+      ),
+
+      // 章一覧
+      React.createElement('h2', { style:{ fontSize:15, color:C.sub, marginBottom:14, fontWeight:500 } }, "章別練習（問題バンクから重点学習）"),
+      React.createElement('div', { style:{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))", gap:12 } },
+        CHAPTERS.map(ch => {
+          const prog = progress[ch.id]||0;
+          const qCount = (QUESTION_BANK[ch.id]||[]).length;
+          return React.createElement('div', {
+            key:ch.id,
+            onClick: ()=>openChapter(ch.id),
+            style:{ background:C.panel, border:`1px solid ${C.border}`, borderRadius:13, padding:17, cursor:"pointer", transition:"all 0.18s" }
+          },
+            React.createElement('div', { style:{ display:"flex", justifyContent:"space-between", marginBottom:8 } },
+              React.createElement('span', { style:{ fontSize:22 } }, ch.icon),
+              prog>0 && React.createElement('span', { style:{ fontSize:12, fontWeight:700, padding:"2px 10px", borderRadius:20, background:prog>=80?"rgba(16,185,129,0.2)":"rgba(59,130,246,0.15)", color:prog>=80?C.green:"#60a5fa" } }, `${prog}%`)
+            ),
+            React.createElement('div', { style:{ fontWeight:600, fontSize:13, marginBottom:4 } }, ch.label),
+            React.createElement('div', { style:{ fontSize:12, color:C.muted } }, `${qCount}問収録 / 試験比重 ${ch.weight}%`),
+            prog>0 && React.createElement('div', { style:{ marginTop:9, height:3, background:"rgba(255,255,255,0.05)", borderRadius:2 } },
+              React.createElement('div', { style:{ height:"100%", width:`${prog}%`, background:`linear-gradient(90deg,${C.blue},${C.purple})`, borderRadius:2 } })
+            )
+          );
+        })
+      )
+    )
+  );
+
+  // CHAPTER PAGE
+  if(page==="chapter") {
+    const ch = CHAPTERS.find(c=>c.id===selectedCh);
+    return React.createElement('div', { style:{ minHeight:"100vh", background:C.bg, fontFamily:"'Noto Sans JP',sans-serif", color:C.text } },
+      React.createElement('div', { style:header },
+        React.createElement('button', { onClick:()=>setPage("home"), style:btn("secondary") }, "← 戻る"),
+        React.createElement('div', { style:{ fontWeight:700, fontSize:15 } }, ch?.label||""),
+        React.createElement('span', { style:{ fontSize:13, color:C.muted } }, `${chQIdx+1} / ${chQs.length}`)
+      ),
+      React.createElement('div', { style:main },
+        !chDone ? React.createElement('div', null,
+          React.createElement('div', { style:card },
+            React.createElement('div', { style:{ display:"flex", gap:3, marginBottom:16 } },
+              chQs.map((_,i)=>React.createElement('div',{key:i,style:{flex:1,height:4,borderRadius:2,background:i<chResults.length?(chResults[i]?C.green:C.red):i===chQIdx?C.blue:"rgba(255,255,255,0.08)"}}))
+            ),
+            renderQ(curChQ, chSel, setChSel, showExp),
+            !showExp ? React.createElement('div', { style:{ marginTop:16 } },
+              React.createElement('button', { onClick:submitChAnswer, disabled:chSel.length===0, style:{ ...btn(chSel.length>0?"primary":"secondary"), opacity:chSel.length>0?1:0.5 } }, "回答する")
+            ) : (
+              chQIdx+1 < chQs.length && React.createElement('button', { onClick:nextChQ, style:{ ...btn("primary"), marginTop:14 } }, "次の問題 →")
+            )
+          )
+        ) : React.createElement('div', { style:{ ...card, textAlign:"center", padding:40 } },
+          React.createElement('div', { style:{ fontSize:48, marginBottom:12 } }, chResults.filter(Boolean).length===chQs.length?"🏆":chResults.filter(Boolean).length>=chQs.length*0.7?"👍":"📚"),
+          React.createElement('h2', { style:{ fontSize:22, margin:"0 0 6px" } }, `${chResults.filter(Boolean).length} / ${chQs.length} 正解`),
+          React.createElement('div', { style:{ color:C.muted, marginBottom:20, fontSize:14 } }, `正答率 ${Math.round(chResults.filter(Boolean).length/chQs.length*100)}%`),
+          React.createElement('div', { style:{ display:"flex", gap:10, justifyContent:"center" } },
+            React.createElement('button', { onClick:()=>openChapter(selectedCh), style:btn("secondary") }, "もう一度"),
+            React.createElement('button', { onClick:()=>setPage("home"), style:btn("primary") }, "トップへ戻る")
+          )
+        )
+      )
+    );
+  }
+
+  // EXAM PAGE
+  if(page==="exam") {
+    if(examReview) {
+      const rq = examQs[reviewIdx];
+      const rSel = examAnswers[reviewIdx]||[];
+      const isCorrect = JSON.stringify([...rSel].sort())===JSON.stringify([...rq.ans].sort());
+      return React.createElement('div', { style:{ minHeight:"100vh", background:C.bg, fontFamily:"'Noto Sans JP',sans-serif", color:C.text } },
+        React.createElement('div', { style:header },
+          React.createElement('button', { onClick:()=>setExamReview(false), style:btn("secondary") }, "← 結果へ"),
+          React.createElement('span', { style:{ fontWeight:700 } }, `問題 ${reviewIdx+1} / ${examQs.length}`),
+          React.createElement('span', { style:{ fontSize:13, padding:"3px 12px", borderRadius:20, background:isCorrect?"rgba(16,185,129,0.15)":"rgba(239,68,68,0.15)", color:isCorrect?C.green:C.red } }, isCorrect?"✓ 正解":"✗ 不正解")
+        ),
+        React.createElement('div', { style:main },
+          React.createElement('div', { style:{ marginBottom:10, fontSize:12, color:C.muted } }, `章: ${CHAPTERS.find(c=>c.id===rq.chId)?.label}`),
+          React.createElement('div', { style:card }, renderQ(rq, rSel, ()=>{}, true)),
+          React.createElement('div', { style:{ display:"flex", gap:10, justifyContent:"center" } },
+            reviewIdx>0 && React.createElement('button', { onClick:()=>setReviewIdx(i=>i-1), style:btn("secondary") }, "← 前"),
+            reviewIdx<examQs.length-1 && React.createElement('button', { onClick:()=>setReviewIdx(i=>i+1), style:btn("primary") }, "次 →")
+          )
+        )
+      );
+    }
+
+    if(examDone) {
+      const sc = examScore();
+      const pct = Math.round(sc/examQs.length*100);
+      const passed = pct >= 63;
+      // 章別スコア
+      const chScore = {};
+      CHAPTERS.forEach(ch=>{ chScore[ch.id]={correct:0,total:0}; });
+      examQs.forEach((q,i)=>{ if(q.chId){ chScore[q.chId].total++; if(JSON.stringify([...(examAnswers[i]||[])].sort())===JSON.stringify([...q.ans].sort())) chScore[q.chId].correct++; } });
+      return React.createElement('div', { style:{ minHeight:"100vh", background:C.bg, fontFamily:"'Noto Sans JP',sans-serif", color:C.text } },
+        React.createElement('div', { style:header },
+          React.createElement('span', { style:{ fontWeight:700, fontSize:16 } }, "模擬試験 結果"),
+          React.createElement('button', { onClick:()=>setPage("home"), style:btn("secondary") }, "トップへ")
+        ),
+        React.createElement('div', { style:main },
+          React.createElement('div', { style:{ ...card, textAlign:"center", padding:36, background:passed?"rgba(16,185,129,0.07)":"rgba(239,68,68,0.07)", border:`1px solid ${passed?C.green:C.red}` } },
+            React.createElement('div', { style:{ fontSize:52, marginBottom:10 } }, passed?"🎉":"💪"),
+            React.createElement('div', { style:{ fontSize:28, fontWeight:700, color:passed?C.green:C.red } }, passed?"合格ライン達成！":"不合格"),
+            React.createElement('div', { style:{ fontSize:36, fontWeight:700, margin:"12px 0", color:C.text } }, `${sc} / ${examQs.length} 問`),
+            React.createElement('div', { style:{ fontSize:18, color:passed?C.green:C.red, fontWeight:600 } }, `${pct}%（合格ライン: 63%）`),
+          ),
+          React.createElement('h3', { style:{ margin:"20px 0 12px", fontSize:15, color:C.sub } }, "章別スコア"),
+          React.createElement('div', { style:{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:8 } },
+            CHAPTERS.map(ch => {
+              const s = chScore[ch.id];
+              if(!s||s.total===0) return null;
+              const p2 = Math.round(s.correct/s.total*100);
+              return React.createElement('div', { key:ch.id, style:{ ...card, padding:14, marginBottom:0 } },
+                React.createElement('div', { style:{ fontSize:12, color:C.sub, marginBottom:4 } }, ch.label),
+                React.createElement('div', { style:{ fontWeight:700, color:p2>=70?C.green:p2>=50?C.yellow:C.red } }, `${s.correct}/${s.total} (${p2}%)`),
+                React.createElement('div', { style:{ marginTop:5, height:3, background:"rgba(255,255,255,0.05)", borderRadius:2 } },
+                  React.createElement('div', { style:{ height:"100%", width:`${p2}%`, background:p2>=70?`linear-gradient(90deg,${C.green},#059669)`:p2>=50?`linear-gradient(90deg,${C.yellow},#b45309)`:`linear-gradient(90deg,${C.red},#991b1b)`, borderRadius:2 } })
+                )
+              );
+            })
+          ),
+          React.createElement('div', { style:{ textAlign:"center", marginTop:20 } },
+            React.createElement('button', { onClick:()=>{ setExamReview(true); setReviewIdx(0); }, style:{ ...btn("secondary"), marginRight:10 } }, "📝 全問解説を見る"),
+            React.createElement('button', { onClick:startExam, style:btn("primary") }, "もう一度受験する")
+          )
+        )
+      );
+    }
+
+    // 試験中
+    const answered = Object.keys(examAnswers).length;
+    return React.createElement('div', { style:{ minHeight:"100vh", background:C.bg, fontFamily:"'Noto Sans JP',sans-serif", color:C.text } },
+      React.createElement('div', { style:header },
+        React.createElement('div', { style:{ display:"flex", alignItems:"center", gap:12 } },
+          React.createElement('span', { style:{ fontWeight:700, fontSize:15 } }, `問 ${examIdx+1} / ${examQs.length}`),
+          React.createElement('span', { style:{ fontSize:12, color:C.muted } }, `回答済: ${answered}問`),
+        ),
+        React.createElement('div', { style:{ display:"flex", alignItems:"center", gap:10 } },
+          React.createElement('span', { style:{ fontFamily:"monospace", fontSize:18, fontWeight:700, color:examTime<600?C.red:examTime<1800?C.yellow:"#60a5fa" } }, fmt(examTime)),
+          React.createElement('button', { onClick:()=>{ clearInterval(timerRef.current); setExamDone(true); }, style:{ ...btn("red"), fontSize:12, padding:"6px 14px" } }, "終了・採点")
+        )
+      ),
+      React.createElement('div', { style:main },
+        // 進捗バー
+        React.createElement('div', { style:{ display:"flex", gap:1.5, marginBottom:16, flexWrap:"wrap" } },
+          examQs.map((_,i)=>React.createElement('div',{key:i,style:{width:8,height:8,borderRadius:2,background:examAnswers[i]!==undefined?(JSON.stringify([...(examAnswers[i]||[])].sort())===JSON.stringify([...(examQs[i]?.ans||[])].sort())?"#10b981":"#6b7280"):i===examIdx?C.blue:"rgba(255,255,255,0.06)"}}))
+        ),
+        examQ && React.createElement('div', null,
+          React.createElement('div', { style:{ marginBottom:8, fontSize:12, color:C.muted } },
+            `章: ${CHAPTERS.find(c=>c.id===examQ.chId)?.label}`
+          ),
+          React.createElement('div', { style:card },
+            renderQ(examQ, examSel, setExamSel, false)
+          ),
+          React.createElement('div', { style:{ display:"flex", gap:10, alignItems:"center" } },
+            React.createElement('button', {
+              onClick:submitExamAnswer,
+              disabled:examSel.length===0,
+              style:{ ...btn(examSel.length>0?"primary":"secondary"), opacity:examSel.length>0?1:0.5 }
+            }, examIdx+1>=examQs.length?"回答して採点 →":"回答して次へ →"),
+            examIdx>0 && React.createElement('button', { onClick:()=>{ setExamIdx(i=>i-1); setExamSel(examAnswers[examIdx-1]||[]); }, style:btn("secondary") }, "← 前の問題")
+          )
+        )
+      )
+    );
+  }
+
+  return null;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
